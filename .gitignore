@@ -206,3 +206,15 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
+# MTG-specific large data files
+cardsCleaning/ModernAtomic.json
+cardsCleaning/ModernAtomic_cleaned.json
+*.json.gz
+
+# Database dumps
+*.sql.gz
+*.dump
+
+# Temporary files
+*.tmp
+temp/

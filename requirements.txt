@@ -1,0 +1,14 @@
+# PostgreSQL adapter
+psycopg2-binary==2.9.9
+
+# pgvector support
+pgvector==0.2.4
+
+# HTTP requests for Ollama API
+requests==2.31.0
+
+# JSON handling (built-in, but listing for clarity)
+# json - built-in
+
+# Optional: progress bars
+tqdm==4.66.1
