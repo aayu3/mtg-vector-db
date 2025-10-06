@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS mtg_cards (
     mana_value NUMERIC,
     keywords TEXT[],
     legalities JSONB,
+    related_faces TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -30,6 +31,7 @@ CREATE INDEX IF NOT EXISTS idx_cards_colors ON mtg_cards USING GIN(colors);
 CREATE INDEX IF NOT EXISTS idx_cards_mana_value ON mtg_cards(mana_value);
 CREATE INDEX IF NOT EXISTS idx_cards_keywords ON mtg_cards USING GIN(keywords);
 CREATE INDEX IF NOT EXISTS idx_cards_data ON mtg_cards USING GIN(card_data);
+CREATE INDEX IF NOT EXISTS idx_cards_related_faces ON mtg_cards(related_faces);
 
 -- Card embeddings table
 CREATE TABLE IF NOT EXISTS mtg_card_embeddings (

@@ -51,10 +51,28 @@ def create_card_embedding_text(card: Dict[str, Any]) -> str:
 def extract_card_fields(card: Dict[str, Any]) -> Dict[str, Any]:
     """Extract commonly queried fields from card data.
 
+    Handles double-sided cards by using faceName or extracting from full name.
     Uses asciiName when available to avoid unicode issues in database.
     """
-    # Use asciiName if available, otherwise fall back to name
-    card_name = card.get('asciiName') or card.get('name', 'Unknown')
+    full_name = card.get('name', '')
+
+    # Determine unique card_name for this face
+    if card.get('faceName'):
+        # Front face (side a) has faceName - use it
+        card_name = card.get('asciiName') or card['faceName']
+    elif card.get('side') == 'b' and '//' in full_name:
+        # Back face (side b) - extract second part of double-sided name
+        back_name = full_name.split('//')[1].strip()
+        card_name = card.get('asciiName') or back_name
+    else:
+        # Single-faced card
+        card_name = card.get('asciiName') or full_name
+
+    # Store related_faces for double-sided cards to preserve relationship
+    related_faces = full_name if '//' in full_name else None
+
+    # Get Oracle ID for duplicate detection
+    oracle_id = card.get('identifiers', {}).get('scryfallOracleId', '')
 
     return {
         'card_name': card_name,
@@ -63,7 +81,9 @@ def extract_card_fields(card: Dict[str, Any]) -> Dict[str, Any]:
         'colors': card.get('colors', []),
         'mana_value': card.get('manaValue', 0),
         'keywords': card.get('keywords', []),
-        'legalities': card.get('legalities', {})
+        'legalities': card.get('legalities', {}),
+        'related_faces': related_faces,
+        'oracle_id': oracle_id
     }
 
 
@@ -145,9 +165,11 @@ def ingest_cards(
             # Prepare card records
             card_records = []
             embedding_texts = []
+            card_fields_list = []
 
             for card in batch:
                 fields = extract_card_fields(card)
+                card_fields_list.append(fields)
                 card_records.append((
                     fields['card_name'],
                     Json(card),  # Store full card as JSONB
@@ -156,31 +178,74 @@ def ingest_cards(
                     fields['colors'],
                     fields['mana_value'],
                     fields['keywords'],
-                    Json(fields['legalities'])
+                    Json(fields['legalities']),
+                    fields['related_faces']
                 ))
 
                 # Create embedding text
                 embedding_text = create_card_embedding_text(card)
                 embedding_texts.append(embedding_text)
 
-            # Insert cards
+            # Insert cards with duplicate detection
             print(f"  Inserting {len(card_records)} cards into database...")
             insert_card_query = """
                 INSERT INTO mtg_cards (
                     card_name, card_data, text_content, card_type,
-                    colors, mana_value, keywords, legalities
+                    colors, mana_value, keywords, legalities, related_faces
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
             """
 
             card_ids = []
-            for record in card_records:
-                db.execute(insert_card_query, record)
-                card_id = db.cursor.fetchone()[0]
-                card_ids.append(card_id)
+            duplicates_skipped = 0
 
-            cards_inserted += len(card_ids)
+            for i, record in enumerate(card_records):
+                fields = card_fields_list[i]
+
+                # Check if card already exists first (pre-check to avoid rollbacks)
+                try:
+                    db.execute("SELECT id FROM mtg_cards WHERE card_name = %s LIMIT 1", (fields['card_name'],))
+                    existing = db.cursor.fetchone()
+
+                    if existing:
+                        # Duplicate exists - skip and log
+                        duplicates_skipped += 1
+
+                        with open('card_duplicates.log', 'a', encoding='utf-8') as f:
+                            f.write(f"Duplicate: {fields['card_name']}\n")
+                            f.write(f"  Type: {fields['card_type']}\n")
+                            f.write(f"  Mana Value: {fields['mana_value']}\n")
+                            f.write(f"  Related Faces: {fields['related_faces']}\n")
+                            f.write(f"  Oracle ID: {fields['oracle_id']}\n")
+                            f.write("-" * 80 + "\n")
+
+                        card_ids.append(None)
+                        continue
+                except:
+                    pass
+
+                # Try to insert new card
+                try:
+                    db.execute(insert_card_query, record)
+                    card_id = db.cursor.fetchone()[0]
+                    card_ids.append(card_id)
+                except Exception as e:
+                    error_str = str(e)
+
+                    # Log error and skip
+                    print(f"    Error inserting {fields['card_name']}: {e}")
+                    with open('card_errors.log', 'a', encoding='utf-8') as f:
+                        f.write(f"Error: {fields['card_name']}\n")
+                        f.write(f"  {error_str}\n")
+                        f.write("-" * 80 + "\n")
+
+                    card_ids.append(None)
+
+            cards_inserted += (len(card_ids) - duplicates_skipped)
+
+            if duplicates_skipped > 0:
+                print(f"  Skipped {duplicates_skipped} duplicate cards (logged to card_duplicates.log)")
 
             # Generate embeddings
             print(f"  Generating embeddings for {len(embedding_texts)} cards...")
@@ -199,7 +264,7 @@ def ingest_cards(
 
             embedding_records = []
             for card_id, embedding in zip(card_ids, embeddings):
-                if embedding is not None:
+                if embedding is not None and card_id is not None:
                     embedding_records.append((
                         card_id,
                         format_vector_for_postgres(embedding),
