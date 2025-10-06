@@ -32,7 +32,7 @@ The database consists of 6 tables organized in 3 pairs:
 
 3. **Ollama model pulled:**
    ```bash
-   docker exec -it mtg-ollama ollama pull nomic-embed-text
+   docker exec -it mtg-ollama ollama pull embeddinggemma:300m
    ```
 
 ## Data Files Required
@@ -122,7 +122,7 @@ db_config = {
 
 ollama_config = {
     "base_url": "http://localhost:11434",
-    "model": "nomic-embed-text:latest"
+    "model": "embeddinggemma:300m"
 }
 ```
 

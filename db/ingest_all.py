@@ -33,7 +33,7 @@ def main():
 
     ollama_config = {
         "base_url": "http://localhost:11434",
-        "model": "embeddinggemma:latest"
+        "model": "embeddinggemma:300m"
     }
 
     start_time = time.time()

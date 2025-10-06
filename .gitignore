@@ -209,6 +209,8 @@ __marimo__/
 # MTG-specific large data files
 cardsCleaning/ModernAtomic.json
 cardsCleaning/ModernAtomic_cleaned.json
+cardsCleaning/AtomicCards.json
+cardsCleaning/AtomicCards_cleaned.json
 *.json.gz
 
 # Database dumps

@@ -293,7 +293,7 @@ def ingest_cards(
 def main():
     """Main execution."""
     # Configuration
-    json_file = "../cardsCleaning/ModernAtomic_cleaned.json"
+    json_file = "../cardsCleaning/AtomicCards_cleaned.json"
 
     db_config = {
         "host": "localhost",
@@ -305,7 +305,7 @@ def main():
 
     ollama_config = {
         "base_url": "http://localhost:11434",
-        "model": "embeddinggemma:latest"
+        "model": "embeddinggemma:300m"
     }
 
     # Run ingestion
