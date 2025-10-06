@@ -61,7 +61,7 @@ docker exec -it mtg-ollama ollama pull embeddinggemma:300m
 
 **Note:** The init.sql schema is configured for 768-dimensional vectors. You may need to adjust this based on your model:
 - `embeddinggemma:300m` = 768 dimensions
-- Update `vector(768)` to `vector(1025)` in [init.sql](db/init.sql) if needed
+- Update `vector(768)` to `vector(1024)` in [init.sql](db/init.sql) if needed
 
 ### 3. Install Python Dependencies
 
