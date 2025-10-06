@@ -45,7 +45,7 @@ def clean_mtg_json(input_file, output_file):
     print("Done!")
 
 if __name__ == "__main__":
-    input_file = "ModernAtomic.json"
-    output_file = "ModernAtomic_cleaned.json"
+    input_file = "AtomicCards.json"
+    output_file = "AtomicCards_cleaned.json"
 
     clean_mtg_json(input_file, output_file)

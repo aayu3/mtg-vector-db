@@ -11,7 +11,7 @@ See [QUICKSTART.md](QUICKSTART.md) for detailed setup instructions.
 docker-compose up -d
 
 # 2. Pull embedding model
-docker exec -it mtg-ollama ollama pull nomic-embed-text
+docker exec -it mtg-ollama ollama pull embeddinggemma:300m
 
 # 3. Install Python dependencies
 pip install -r requirements.txt

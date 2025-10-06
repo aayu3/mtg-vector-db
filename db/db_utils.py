@@ -91,7 +91,7 @@ class OllamaEmbedder:
     def __init__(
         self,
         base_url: str = "http://localhost:11434",
-        model: str = "embeddinggemma:latest"
+        model: str = "embeddinggemma:300m"
     ):
         self.base_url = base_url
         self.model = model
