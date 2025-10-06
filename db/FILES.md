@@ -200,7 +200,7 @@ db_config = {
 # Ollama embeddings
 ollama_config = {
     "base_url": "http://localhost:11434",
-    "model": "nomic-embed-text:latest"
+    "model": "embeddinggemma:300m"
 }
 ```
 

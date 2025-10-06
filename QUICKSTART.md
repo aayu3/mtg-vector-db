@@ -55,13 +55,13 @@ You should see:
 ### 2. Pull Ollama Embedding Model
 
 ```bash
-# Pull the nomic-embed-text model (768-dimensional embeddings)
-docker exec -it mtg-ollama ollama pull nomic-embed-text
+# Pull the embeddinggemma:300m model (768-dimensional embeddings)
+docker exec -it mtg-ollama ollama pull embeddinggemma:300m
 ```
 
-**Note:** The init.sql schema is configured for 1024-dimensional vectors. You may need to adjust this based on your model:
-- `nomic-embed-text` = 768 dimensions
-- Update `vector(1024)` to `vector(768)` in [init.sql](db/init.sql) if needed
+**Note:** The init.sql schema is configured for 768-dimensional vectors. You may need to adjust this based on your model:
+- `embeddinggemma:300m` = 768 dimensions
+- Update `vector(768)` to `vector(1025)` in [init.sql](db/init.sql) if needed
 
 ### 3. Install Python Dependencies
 
@@ -181,7 +181,7 @@ db_config = {
 ```python
 ollama_config = {
     "base_url": "http://localhost:11434",
-    "model": "nomic-embed-text:latest"
+    "model": "embeddinggemma:300m"
 }
 ```
 
@@ -208,7 +208,7 @@ curl http://localhost:11434/api/tags
 ### Embedding Generation Fails
 ```bash
 # Pull the model again
-docker exec -it mtg-ollama ollama pull nomic-embed-text
+docker exec -it mtg-ollama ollama pull embeddinggemma:300m
 
 # Check if model is available
 docker exec -it mtg-ollama ollama list
