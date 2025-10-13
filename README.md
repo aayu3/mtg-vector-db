@@ -19,7 +19,10 @@ pip install -r requirements.txt
 # 4. Ingest all data
 cd db && python ingest_all.py
 ```
+`You are an expert game designer for Magic: The Gathering. Please identify any possible Magic: The Gathering cards and card descriptions and indentifiers and return them as a JSON object with two lists {"cardNames": [], "cardDescriptions" : []} in the following text "I cast Humility and my opponent casts an enchantment that makes all enchantments into 1/1 creatures"`
 
+You are an expert Magic: The Gathering game designer, please reword the following descriptions of Magic: The Gatheri
+... ng cards to use language like existing cards. Don't add any information, just reword the description given in a way that doesn't add any information but uses the terminology of existing cards.
 ## Database Schema
 
 The database contains 6 tables organized in 3 document/embedding pairs:
