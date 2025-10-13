@@ -5,6 +5,9 @@
 -- Enable pgvector extension
 CREATE EXTENSION IF NOT EXISTS vector;
 
+-- Enable pg_trgm extension for fuzzy text matching
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 -- ============================================================================
 -- CARDS TABLES
 -- ============================================================================
@@ -26,6 +29,7 @@ CREATE TABLE IF NOT EXISTS mtg_cards (
 
 -- Create indexes on frequently queried fields
 CREATE INDEX IF NOT EXISTS idx_cards_name ON mtg_cards(card_name);
+CREATE INDEX IF NOT EXISTS idx_cards_name_trgm ON mtg_cards USING GIN (card_name gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_cards_type ON mtg_cards(card_type);
 CREATE INDEX IF NOT EXISTS idx_cards_colors ON mtg_cards USING GIN(colors);
 CREATE INDEX IF NOT EXISTS idx_cards_mana_value ON mtg_cards(mana_value);
@@ -33,7 +37,7 @@ CREATE INDEX IF NOT EXISTS idx_cards_keywords ON mtg_cards USING GIN(keywords);
 CREATE INDEX IF NOT EXISTS idx_cards_data ON mtg_cards USING GIN(card_data);
 CREATE INDEX IF NOT EXISTS idx_cards_related_faces ON mtg_cards(related_faces);
 
--- Card embeddings table
+-- Card embeddings table (structured format with labels)
 CREATE TABLE IF NOT EXISTS mtg_card_embeddings (
     id SERIAL PRIMARY KEY,
     card_id INTEGER NOT NULL REFERENCES mtg_cards(id) ON DELETE CASCADE,
@@ -50,6 +54,25 @@ WITH (m = 16, ef_construction = 64);
 
 -- Index for foreign key lookups
 CREATE INDEX IF NOT EXISTS idx_card_embeddings_card_id ON mtg_card_embeddings(card_id);
+
+-- Card natural language embeddings table (plain text descriptions)
+CREATE TABLE IF NOT EXISTS mtg_card_nl_embeddings (
+    id SERIAL PRIMARY KEY,
+    card_id INTEGER NOT NULL REFERENCES mtg_cards(id) ON DELETE CASCADE,
+    embedding vector(768),
+    embedding_model TEXT NOT NULL,
+    nl_text TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- HNSW index for fast similarity search on natural language embeddings
+CREATE INDEX IF NOT EXISTS idx_card_nl_embeddings_hnsw
+ON mtg_card_nl_embeddings
+USING hnsw (embedding vector_cosine_ops)
+WITH (m = 16, ef_construction = 64);
+
+-- Index for foreign key lookups
+CREATE INDEX IF NOT EXISTS idx_card_nl_embeddings_card_id ON mtg_card_nl_embeddings(card_id);
 
 -- ============================================================================
 -- RULES TABLES
