@@ -41,10 +41,10 @@ class DatabaseConnection:
                 password=self.password
             )
             self.cursor = self.conn.cursor()
-            print(f"✓ Connected to database: {self.database}")
+            print(f"[OK] Connected to database: {self.database}")
             return self
         except Exception as e:
-            print(f"✗ Database connection failed: {e}")
+            print(f"[ERROR] Database connection failed: {e}")
             raise
 
     def close(self):
@@ -53,7 +53,7 @@ class DatabaseConnection:
             self.cursor.close()
         if self.conn:
             self.conn.close()
-        print("✓ Database connection closed")
+        print("[OK] Database connection closed")
 
     def __enter__(self):
         """Context manager entry."""
@@ -174,14 +174,14 @@ class OllamaEmbedder:
             # Try to generate a simple embedding
             test_embedding = self.generate_embedding("test", max_retries=1)
             if test_embedding:
-                print(f"✓ Ollama connection successful (model: {self.model})")
+                print(f"[OK] Ollama connection successful (model: {self.model})")
                 print(f"  Embedding dimension: {len(test_embedding)}")
                 return True
             else:
-                print(f"✗ Ollama connection failed")
+                print(f"[ERROR] Ollama connection failed")
                 return False
         except Exception as e:
-            print(f"✗ Ollama connection error: {e}")
+            print(f"[ERROR] Ollama connection error: {e}")
             return False
 
 
@@ -207,14 +207,14 @@ def wait_for_postgres(
         try:
             with DatabaseConnection(**db_kwargs) as db:
                 db.execute("SELECT 1")
-                print("✓ PostgreSQL is ready")
+                print("[OK] PostgreSQL is ready")
                 return True
         except Exception as e:
             if attempt < max_attempts - 1:
                 print(f"  Attempt {attempt + 1}/{max_attempts} failed, retrying in {delay}s...")
                 time.sleep(delay)
             else:
-                print(f"✗ PostgreSQL not ready after {max_attempts} attempts")
+                print(f"[ERROR] PostgreSQL not ready after {max_attempts} attempts")
                 return False
 
     return False
@@ -249,7 +249,7 @@ def wait_for_ollama(
                 print(f"  Attempt {attempt + 1}/{max_attempts} failed, retrying in {delay}s...")
                 time.sleep(delay)
             else:
-                print(f"✗ Ollama not ready after {max_attempts} attempts")
+                print(f"[ERROR] Ollama not ready after {max_attempts} attempts")
                 return False
 
     return False
@@ -266,3 +266,247 @@ def format_vector_for_postgres(embedding: List[float]) -> str:
         String formatted for pgvector (e.g., '[0.1, 0.2, 0.3]')
     """
     return '[' + ','.join(str(x) for x in embedding) + ']'
+
+
+class OllamaReranker:
+    """Reranks search results using Ollama reranker models."""
+
+    def __init__(
+        self,
+        base_url: str = "http://localhost:11434",
+        model: str = "dengcao/Qwen3-Reranker-8B:F16"
+    ):
+        self.base_url = base_url
+        self.model = model
+        self.generate_url = f"{base_url}/api/generate"
+
+    def rerank(
+        self,
+        query: str,
+        documents: List[str],
+        top_k: Optional[int] = None,
+        max_retries: int = 3
+    ) -> List[Dict[str, Any]]:
+        """
+        Rerank Magic: The Gathering cards based on relevance to query.
+
+        Uses batch prompt to compare all cards at once for better context.
+
+        Args:
+            query: The search query (e.g., "flying creature with deathtouch")
+            documents: List of card descriptions to rerank
+            top_k: Number of top results to return (None = return all)
+            max_retries: Number of retry attempts on failure
+
+        Returns:
+            List of dicts with 'index', 'text', and 'score' sorted by relevance
+        """
+        if not documents:
+            return []
+
+        # Build batch prompt with all cards
+        prompt = f"""You are ranking Magic: The Gathering cards by relevance.
+
+User is searching for: "{query}"
+
+Here are the candidate MTG cards:
+
+"""
+        for idx, doc in enumerate(documents, 1):
+            prompt += f"{idx}. {doc}\n\n"
+
+        prompt += f"""Rank these {len(documents)} cards from most to least relevant to the search query "{query}".
+Output ONLY the numbers in order, separated by spaces (e.g., "3 1 5 2 4").
+Most relevant first."""
+
+        # Get ranking from model
+        ranking = self._get_batch_ranking(prompt, len(documents), max_retries)
+
+        if not ranking:
+            # If batch ranking fails, return original order with equal scores
+            return [{'index': i, 'text': doc, 'score': 0.5} for i, doc in enumerate(documents)][:top_k]
+
+        # Convert ranking to scores (inverse rank normalized to 0-1)
+        results = []
+        for rank_position, doc_index in enumerate(ranking):
+            # Higher rank = higher score
+            score = 1.0 - (rank_position / len(documents))
+            results.append({
+                'index': doc_index,
+                'text': documents[doc_index],
+                'score': score
+            })
+
+        # Return top_k if specified
+        if top_k is not None:
+            results = results[:top_k]
+
+        return results
+
+    def _get_batch_ranking(self, prompt: str, num_docs: int, max_retries: int) -> Optional[List[int]]:
+        """
+        Get ranking from model for batch of documents.
+
+        Args:
+            prompt: The formatted batch ranking prompt
+            num_docs: Expected number of documents
+            max_retries: Number of retry attempts
+
+        Returns:
+            List of document indices in ranked order (0-indexed), or None on failure
+        """
+        import re
+
+        payload = {
+            "model": self.model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": 0.0,
+                "num_predict": 100
+            }
+        }
+
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(
+                    self.generate_url,
+                    json=payload,
+                    timeout=60
+                )
+
+                if response.status_code == 200:
+                    result = response.json()
+                    response_text = result.get('response', '').strip()
+
+                    # Parse ranking from response
+                    # Look for numbers separated by spaces, commas, or newlines
+                    numbers = re.findall(r'\d+', response_text)
+
+                    if numbers:
+                        # Convert to 0-indexed (prompt uses 1-indexed)
+                        ranking = [int(n) - 1 for n in numbers]
+
+                        # Validate: should have valid indices
+                        ranking = [idx for idx in ranking if 0 <= idx < num_docs]
+
+                        # Add any missing indices at the end
+                        missing = set(range(num_docs)) - set(ranking)
+                        ranking.extend(sorted(missing))
+
+                        return ranking[:num_docs]
+
+                else:
+                    print(f"Warning: Reranker API returned status {response.status_code}")
+
+            except requests.exceptions.RequestException as e:
+                print(f"Warning: Reranker request failed (attempt {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(2 ** attempt)
+
+        return None
+
+    def _get_relevance_score(self, prompt: str, max_retries: int) -> Optional[float]:
+        """
+        Get relevance score from reranker model.
+
+        Args:
+            prompt: The formatted prompt
+            max_retries: Number of retry attempts
+
+        Returns:
+            Relevance score (0-1) or None on failure
+        """
+        payload = {
+            "model": self.model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": 0.0,
+                "num_predict": 10
+            }
+        }
+
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(
+                    self.generate_url,
+                    json=payload,
+                    timeout=30
+                )
+
+                if response.status_code == 200:
+                    result = response.json()
+                    response_text = result.get('response', '').strip()
+
+                    # Try to parse score from response
+                    score = self._parse_score(response_text)
+                    return score
+                else:
+                    print(f"Warning: Reranker API returned status {response.status_code}")
+
+            except requests.exceptions.RequestException as e:
+                print(f"Warning: Reranker request failed (attempt {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(2 ** attempt)
+
+        return None
+
+    def _parse_score(self, response_text: str) -> float:
+        """
+        Parse relevance score from model response.
+
+        Args:
+            response_text: Raw text from model
+
+        Returns:
+            Score between 0 and 1
+        """
+        import re
+
+        # Try to extract a number from the response
+        # Look for patterns like "0.85", "85%", "8.5/10", etc.
+        patterns = [
+            r'(\d+\.?\d*)\s*%',  # "85%"
+            r'(\d+\.?\d*)\s*/\s*10',  # "8.5/10"
+            r'(\d+\.?\d*)\s*/\s*100',  # "85/100"
+            r'^(\d+\.?\d*)',  # Just a number at start
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, response_text)
+            if match:
+                score = float(match.group(1))
+
+                # Normalize to 0-1 range
+                if '%' in pattern or '/100' in pattern:
+                    score = score / 100.0
+                elif '/10' in pattern:
+                    score = score / 10.0
+
+                return max(0.0, min(1.0, score))
+
+        # If no pattern matched, try to convert entire response to float
+        try:
+            score = float(response_text.strip())
+            return max(0.0, min(1.0, score))
+        except:
+            # Default low score if parsing failed
+            return 0.0
+
+    def test_connection(self) -> bool:
+        """Test if reranker model is accessible."""
+        try:
+            test_score = self._get_relevance_score(
+                "Query: test\n\nDocument: test document\n\nRelevance score:",
+                max_retries=1
+            )
+            if test_score is not None:
+                print(f"[OK] Reranker connection successful (model: {self.model})")
+                return True
+            else:
+                print(f"[ERROR] Reranker connection failed")
+                return False
+        except Exception as e:
+            print(f"[ERROR] Reranker connection error: {e}")
+            return False
